@@ -1,19 +1,37 @@
-import { Duration, Stack, StackProps } from 'aws-cdk-lib';
-import * as sns from 'aws-cdk-lib/aws-sns';
-import * as subs from 'aws-cdk-lib/aws-sns-subscriptions';
-import * as sqs from 'aws-cdk-lib/aws-sqs';
-import { Construct } from 'constructs';
+import { Stack, StackProps } from "aws-cdk-lib";
+import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as apiAws from "aws-cdk-lib/aws-apigateway";
+import * as dynamo from "aws-cdk-lib/aws-dynamodb";
+import { Construct } from "constructs";
 
 export class TaskTwoStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    const queue = new sqs.Queue(this, 'TaskTwoQueue', {
-      visibilityTimeout: Duration.seconds(300)
+    const api = new apiAws.RestApi(this, "the-crud-api", {
+      restApiName: "the-crud-api",
+      description: "use to do CRUD API",
+      deploy: true,
     });
 
-    const topic = new sns.Topic(this, 'TaskTwoTopic');
-
-    topic.addSubscription(new subs.SqsSubscription(queue));
+    const table = new dynamo.Table(this, "userTable", {
+      tableName: "userTable",
+      partitionKey: {
+        name: "id",
+        type: dynamo.AttributeType.NUMBER,
+      },
+      billingMode: dynamo.BillingMode.PAY_PER_REQUEST,
+    });
+    const handler = new lambda.Function(this, "HelloHandler", {
+      runtime: lambda.Runtime.NODEJS_16_X,
+      code: lambda.Code.fromAsset("dist/bundle"),
+      handler: "index.handler",
+      environment: {
+        TABLE_NAME: "userTable",
+      },
+    });
+    table.grantReadWriteData(handler);
+    const getUserIntegration = new apiAws.LambdaIntegration(handler);
+    api.root.addResource("{userId}").addMethod("ANY", getUserIntegration);
   }
 }
